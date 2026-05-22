@@ -30,6 +30,8 @@ export type ShaderInstance = {
 	getColorAtPos: (self: ShaderInstance, x: number, y: number) -> any,
 
 	setAutoYield: (self: ShaderInstance, enabled: boolean, interval: number?) -> (),
+
+	_maybeYield: (self: ShaderInstance) -> (),
 }
 
 local ShaderInstance = {}
@@ -122,6 +124,29 @@ function ShaderInstance:setAutoYield(enabled: boolean, interval: number?)
 	end
 end
 
+function ShaderInstance:_maybeYield()
+	if not self.AutoYield then
+		return
+	end
+
+	self.YieldCheckCount += 1
+
+	if self.YieldCheckCount < 512 then
+		return
+	end
+
+	self.YieldCheckCount = 0
+
+	local now = os.clock()
+
+	if now - self.LastYieldTime < self.YieldInterval then
+		return
+	end
+
+	task.wait()
+	self.LastYieldTime = os.clock()
+end
+
 function ShaderInstance:setSizeXY(x: number, y: number)
 	self.Width = x
 	self.Height = y
@@ -144,7 +169,7 @@ function ShaderInstance:step(deltaTime: number?)
 end
 
 function ShaderInstance:getColorAtPos(x: number, y: number)
-	-- game:GetService("RunService").Heartbeat:Wait()
+	-- self:_maybeYield()
 
 	local uv = {
 		x = x / self.Width,

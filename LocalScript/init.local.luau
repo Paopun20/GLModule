@@ -4,7 +4,7 @@ local Image = script.Parent.Image
 local size = Vector2.new(854, 480)
 
 local editable = game:GetService("AssetService"):CreateEditableImage({
-	Size = size
+	Size = size,
 })
 
 Image.ImageContent = Content.fromObject(editable)
@@ -92,7 +92,6 @@ for (i in 0...n) {
 }
 ]]
 
-
 shader:setUniform("uFreq1", 0.003)
 shader:setUniform("uFreq2", 0.004)
 shader:setUniform("uFreq3", 0.005)
@@ -105,51 +104,48 @@ shader:setUniform("uOffsetY3", 300)
 shader:setUniform("uOffsetY4", 400)
 shader:setUniform("uOffsetY5", 500)
 
-shader:setUniform("uColor0", {x=0.1,y=0.1,z=0.3,w=1})
-shader:setUniform("uColor1", {x=0.2,y=0.2,z=0.5,w=1})
-shader:setUniform("uColor2", {x=0.3,y=0.3,z=0.6,w=1})
-shader:setUniform("uColor3", {x=0.5,y=0.4,z=0.7,w=1})
-shader:setUniform("uColor4", {x=0.8,y=0.5,z=0.5,w=1})
-shader:setUniform("uColor5", {x=1.0,y=0.8,z=0.4,w=1})
+shader:setUniform("uColor0", { x = 0.1, y = 0.1, z = 0.3, w = 1 })
+shader:setUniform("uColor1", { x = 0.2, y = 0.2, z = 0.5, w = 1 })
+shader:setUniform("uColor2", { x = 0.3, y = 0.3, z = 0.6, w = 1 })
+shader:setUniform("uColor3", { x = 0.5, y = 0.4, z = 0.7, w = 1 })
+shader:setUniform("uColor4", { x = 0.8, y = 0.5, z = 0.5, w = 1 })
+shader:setUniform("uColor5", { x = 1.0, y = 0.8, z = 0.4, w = 1 })
 
 shader:setSizeXY(size.X, size.Y)
 
-f = 0
+task.spawn(function()
+	local f = 0
 
-while true do
-	game:GetService("RunService").PreRender:Wait()
-	shader:step()
+	while true do
+		shader:step()
 
-	local width = size.X
-	local height = size.Y
+		local width = size.X
+		local height = size.Y
 
-	local bc = buffer.create(width * height * 4)
+		local bc = buffer.create(width * height * 4)
 
-	for y = 0, height - 1 do
-		for x = 0, width - 1 do
+		for y = 0, height - 1 do
+			for x = 0, width - 1 do
+				local color = shader:getColorAtPos(x, y)
 
-			local color = shader:getColorAtPos(x, y)
+				local index = (y * width + x) * 4
 
-			local index = (y * width + x) * 4
-
-			buffer.writeu8(bc, index + 0, math.floor(color.x * 255))
-			buffer.writeu8(bc, index + 1, math.floor(color.y * 255))
-			buffer.writeu8(bc, index + 2, math.floor(color.z * 255))
-			buffer.writeu8(bc, index + 3, math.floor((color.w or 1) * 255))
+				buffer.writeu8(bc, index + 0, math.floor(color.x * 255))
+				buffer.writeu8(bc, index + 1, math.floor(color.y * 255))
+				buffer.writeu8(bc, index + 2, math.floor(color.z * 255))
+				buffer.writeu8(bc, index + 3, math.floor((color.w or 1) * 255))
+			end
 		end
-	end
-	
-	shader:setUniform("uTime1", f)
-	shader:setUniform("uTime2", f + 1)
-	shader:setUniform("uTime3", f + 2)
-	shader:setUniform("uTime4", f + 3)
-	shader:setUniform("uTime5", f + 4)
 
-	editable:WritePixelsBuffer(
-		Vector2.zero,
-		size,
-		bc
-	)
-	
-	f += 1
-end
+		shader:setUniform("uTime1", f)
+		shader:setUniform("uTime2", f + 1)
+		shader:setUniform("uTime3", f + 2)
+		shader:setUniform("uTime4", f + 3)
+		shader:setUniform("uTime5", f + 4)
+
+		editable:WritePixelsBuffer(Vector2.zero, size, bc)
+
+		f += 1 / 60
+		task.wait(1 / 25)
+	end
+end)

@@ -32,14 +32,21 @@ export type vec4 = {
 
 type Scope = {
 	parent: Scope?,
-	variables: {[string]: any},
+	variables: { [string]: any },
 }
 
-local function vec2Ctor(
-	x: number,
-	y: number?
-): vec2
+type Instruction = {
+	op: string,
+	a: any?,
+	b: any?,
+}
 
+type Chunk = {
+	code: { Instruction },
+	parameters: { any },
+}
+
+local function vec2Ctor(x: number, y: number?): vec2
 	y = y or x
 
 	return {
@@ -48,12 +55,7 @@ local function vec2Ctor(
 	}
 end
 
-local function vec3Ctor(
-	x: number,
-	y: number?,
-	z: number?
-): vec3
-
+local function vec3Ctor(x: number, y: number?, z: number?): vec3
 	y = y or x
 	z = z or x
 
@@ -64,13 +66,7 @@ local function vec3Ctor(
 	}
 end
 
-local function vec4Ctor(
-	x: number,
-	y: number?,
-	z: number?,
-	w: number?
-): vec4
-
+local function vec4Ctor(x: number, y: number?, z: number?, w: number?): vec4
 	y = y or x
 	z = z or x
 	w = w or x
@@ -84,7 +80,6 @@ local function vec4Ctor(
 end
 
 local BUILTINS = {
-
 	sin = SIN,
 	cos = COS,
 	tan = TAN,
@@ -102,8 +97,266 @@ local BUILTINS = {
 local Interpreter = {}
 Interpreter.__index = Interpreter
 
-function Interpreter.new()
+local function createScope(parent: Scope?): Scope
+	return {
+		parent = parent,
+		variables = {},
+	}
+end
 
+local function defineVariable(scope: Scope, name: string, value: any)
+	scope.variables[name] = value
+end
+
+local function resolveVariable(scope: Scope, name: string)
+	local current = scope
+
+	while current do
+		local value = current.variables[name]
+
+		if value ~= nil then
+			return value
+		end
+
+		current = current.parent
+	end
+
+	error(("Undefined variable '%s'"):format(name))
+end
+
+local function assignVariable(scope: Scope, name: string, value: any)
+	local current = scope
+
+	while current do
+		if current.variables[name] ~= nil then
+			current.variables[name] = value
+			return
+		end
+
+		current = current.parent
+	end
+
+	error(("Undefined variable '%s'"):format(name))
+end
+
+local function isVector(value: any): boolean
+	return type(value) == "table" and value.x ~= nil
+end
+
+local function binaryAdd(a, b)
+	if isVector(a) and isVector(b) then
+		if a.w ~= nil then
+			return vec4Ctor(a.x + b.x, a.y + b.y, a.z + b.z, a.w + b.w)
+		end
+
+		if a.z ~= nil then
+			return vec3Ctor(a.x + b.x, a.y + b.y, a.z + b.z)
+		end
+
+		return vec2Ctor(a.x + b.x, a.y + b.y)
+	end
+
+	return a + b
+end
+
+local function binarySub(a, b)
+	if isVector(a) and isVector(b) then
+		if a.w ~= nil then
+			return vec4Ctor(a.x - b.x, a.y - b.y, a.z - b.z, a.w - b.w)
+		end
+
+		if a.z ~= nil then
+			return vec3Ctor(a.x - b.x, a.y - b.y, a.z - b.z)
+		end
+
+		return vec2Ctor(a.x - b.x, a.y - b.y)
+	end
+
+	return a - b
+end
+
+local function binaryMul(a, b)
+	if isVector(a) and type(b) == "number" then
+		if a.w ~= nil then
+			return vec4Ctor(a.x * b, a.y * b, a.z * b, a.w * b)
+		end
+
+		if a.z ~= nil then
+			return vec3Ctor(a.x * b, a.y * b, a.z * b)
+		end
+
+		return vec2Ctor(a.x * b, a.y * b)
+	end
+
+	return a * b
+end
+
+local function binaryDiv(a, b)
+	if isVector(a) and type(b) == "number" then
+		if a.w ~= nil then
+			return vec4Ctor(a.x / b, a.y / b, a.z / b, a.w / b)
+		end
+
+		if a.z ~= nil then
+			return vec3Ctor(a.x / b, a.y / b, a.z / b)
+		end
+
+		return vec2Ctor(a.x / b, a.y / b)
+	end
+
+	return a / b
+end
+
+local function emit(code: { Instruction }, op: string, a: any?, b: any?): number
+	table.insert(code, {
+		op = op,
+		a = a,
+		b = b,
+	})
+
+	return #code
+end
+
+local function patchJump(code: { Instruction }, index: number, target: number)
+	code[index].a = target
+end
+
+local function compileExpression(self, node, code: { Instruction })
+	if node.type == "NumberLiteral" or node.type == "BooleanLiteral" then
+		emit(code, "PUSH", node.value)
+		return
+	end
+
+	if node.type == "Identifier" then
+		emit(code, "LOAD", node.name)
+		return
+	end
+
+	if node.type == "MemberExpression" then
+		compileExpression(self, node.object, code)
+		emit(code, "GET_MEMBER", node.property)
+		return
+	end
+
+	if node.type == "UnaryExpression" then
+		compileExpression(self, node.argument, code)
+		emit(code, "UNARY", node.operator)
+		return
+	end
+
+	if node.type == "BinaryExpression" then
+		compileExpression(self, node.left, code)
+		compileExpression(self, node.right, code)
+		emit(code, "BINARY", node.operator)
+		return
+	end
+
+	if node.type == "CallExpression" then
+		if node.callee.type ~= "Identifier" then
+			error("Unsupported callee")
+		end
+
+		for _, arg in node.arguments do
+			compileExpression(self, arg, code)
+		end
+
+		emit(code, "CALL", node.callee.name, #node.arguments)
+		return
+	end
+
+	if node.type == "AssignmentExpression" then
+		local left = node.left
+
+		if left.type ~= "Identifier" then
+			error("Invalid assignment target")
+		end
+
+		if node.operator ~= "=" then
+			emit(code, "LOAD", left.name)
+		end
+
+		compileExpression(self, node.right, code)
+
+		if node.operator == "+=" then
+			emit(code, "BINARY", "+")
+		elseif node.operator == "-=" then
+			emit(code, "BINARY", "-")
+		elseif node.operator == "*=" then
+			emit(code, "BINARY", "*")
+		elseif node.operator == "/=" then
+			emit(code, "BINARY", "/")
+		end
+
+		emit(code, "STORE", left.name)
+		return
+	end
+
+	error(("Unknown expression '%s'"):format(node.type))
+end
+
+local function compileStatement(self, node, code: { Instruction })
+	if node.type == "ExpressionStatement" then
+		compileExpression(self, node.expression, code)
+		emit(code, "POP")
+		return
+	end
+
+	if node.type == "VariableDeclaration" then
+		if node.value then
+			compileExpression(self, node.value, code)
+		else
+			emit(code, "PUSH", nil)
+		end
+
+		emit(code, "DEFINE", node.name)
+		return
+	end
+
+	if node.type == "BlockStatement" then
+		emit(code, "BEGIN_SCOPE")
+
+		for _, statement in node.body do
+			compileStatement(self, statement, code)
+		end
+
+		emit(code, "END_SCOPE")
+		return
+	end
+
+	if node.type == "IfStatement" then
+		compileExpression(self, node.test, code)
+
+		local falseJump = emit(code, "JUMP_IF_FALSE", 0)
+
+		compileStatement(self, node.consequent, code)
+
+		local endJump = emit(code, "JUMP", 0)
+
+		patchJump(code, falseJump, #code + 1)
+
+		if node.alternate then
+			compileStatement(self, node.alternate, code)
+		end
+
+		patchJump(code, endJump, #code + 1)
+		return
+	end
+
+	if node.type == "ReturnStatement" then
+		if node.argument then
+			compileExpression(self, node.argument, code)
+		else
+			emit(code, "PUSH", nil)
+		end
+
+		emit(code, "RETURN")
+		return
+	end
+
+	error(("Unknown statement '%s'"):format(node.type))
+end
+
+function Interpreter.new()
 	local self = setmetatable({}, Interpreter)
 
 	self.globalScope = {
@@ -118,671 +371,186 @@ function Interpreter.new()
 	return self
 end
 
-local function createScope(
-	parent: Scope?
-): Scope
+function Interpreter:compileFunction(node): Chunk
+	local code = {}
+
+	compileStatement(self, node.body, code)
+	emit(code, "PUSH", nil)
+	emit(code, "RETURN")
 
 	return {
-		parent = parent,
-		variables = {},
+		code = code,
+		parameters = node.parameters,
 	}
 end
 
-local function defineVariable(
-	scope: Scope,
-	name: string,
-	value: any
-)
-	scope.variables[name] = value
-end
-
-local function resolveVariable(
-	scope: Scope,
-	name: string
-)
-
-	local current = scope
-
-	while current do
-
-		local value =
-			current.variables[name]
-
-		if value ~= nil then
-			return value
-		end
-
-		current = current.parent
-	end
-
-	error(
-		("Undefined variable '%s'")
-			:format(name)
-	)
-end
-
-local function assignVariable(
-	scope: Scope,
-	name: string,
-	value: any
-)
-
-	local current = scope
-
-	while current do
-
-		if current.variables[name] ~= nil then
-			current.variables[name] = value
-			return
-		end
-
-		current = current.parent
-	end
-
-	error(
-		("Undefined variable '%s'")
-			:format(name)
-	)
-end
-
-local function isVector(value: any): boolean
-
-	return type(value) == "table"
-		and value.x ~= nil
-end
-
-local function binaryAdd(a, b)
-
-	if isVector(a)
-		and isVector(b)
-	then
-
-		if a.w ~= nil then
-			return vec4Ctor(
-				a.x + b.x,
-				a.y + b.y,
-				a.z + b.z,
-				a.w + b.w
-			)
-		end
-
-		if a.z ~= nil then
-			return vec3Ctor(
-				a.x + b.x,
-				a.y + b.y,
-				a.z + b.z
-			)
-		end
-
-		return vec2Ctor(
-			a.x + b.x,
-			a.y + b.y
-		)
-	end
-
-	return a + b
-end
-
-local function binarySub(a, b)
-
-	if isVector(a)
-		and isVector(b)
-	then
-
-		if a.w ~= nil then
-			return vec4Ctor(
-				a.x - b.x,
-				a.y - b.y,
-				a.z - b.z,
-				a.w - b.w
-			)
-		end
-
-		if a.z ~= nil then
-			return vec3Ctor(
-				a.x - b.x,
-				a.y - b.y,
-				a.z - b.z
-			)
-		end
-
-		return vec2Ctor(
-			a.x - b.x,
-			a.y - b.y
-		)
-	end
-
-	return a - b
-end
-
-local function binaryMul(a, b)
-
-	if isVector(a)
-		and type(b) == "number"
-	then
-
-		if a.w ~= nil then
-			return vec4Ctor(
-				a.x * b,
-				a.y * b,
-				a.z * b,
-				a.w * b
-			)
-		end
-
-		if a.z ~= nil then
-			return vec3Ctor(
-				a.x * b,
-				a.y * b,
-				a.z * b
-			)
-		end
-
-		return vec2Ctor(
-			a.x * b,
-			a.y * b
-		)
-	end
-
-	return a * b
-end
-
-local function binaryDiv(a, b)
-
-	if isVector(a)
-		and type(b) == "number"
-	then
-
-		if a.w ~= nil then
-			return vec4Ctor(
-				a.x / b,
-				a.y / b,
-				a.z / b,
-				a.w / b
-			)
-		end
-
-		if a.z ~= nil then
-			return vec3Ctor(
-				a.x / b,
-				a.y / b,
-				a.z / b
-			)
-		end
-
-		return vec2Ctor(
-			a.x / b,
-			a.y / b
-		)
-	end
-
-	return a / b
-end
-
 function Interpreter:execute(program)
-
 	for _, node in program.body do
-
 		if node.type == "FunctionDeclaration" then
-
-			self.functions[node.name] =
-				node
-
+			self.functions[node.name] = self:compileFunction(node)
 			continue
 		end
 
 		if node.type == "UniformDeclaration" then
-
-			defineVariable(
-				self.globalScope,
-				node.name,
-				0
-			)
-
+			defineVariable(self.globalScope, node.name, 0)
 			continue
 		end
 
-		self:evaluate(
-			node,
-			self.globalScope
-		)
+		local code = {}
+
+		compileStatement(self, node, code)
+		emit(code, "PUSH", nil)
+		emit(code, "RETURN")
+
+		self:runChunk({
+			code = code,
+			parameters = {},
+		}, self.globalScope, {})
 	end
 end
 
-function Interpreter:setUniform(
-	name: string,
-	value: any
-)
-	defineVariable(
-		self.globalScope,
-		name,
-		value
-	)
+function Interpreter:setUniform(name: string, value: any)
+	defineVariable(self.globalScope, name, value)
 end
 
-function Interpreter:callFunction(
-	name: string,
-	args: {any}
-)
+function Interpreter:runChunk(chunk: Chunk, scope: Scope, args: { any })
+	for index, param in chunk.parameters do
+		defineVariable(scope, param.name, args[index])
+	end
 
-	local builtin =
-		BUILTINS[name]
+	local code = chunk.code
+	local stack = {}
+	local top = 0
+	local ip = 1
+	local currentScope = scope
+
+	while true do
+		local instruction = code[ip]
+		ip += 1
+
+		local op = instruction.op
+
+		if op == "PUSH" then
+			top += 1
+			stack[top] = instruction.a
+		elseif op == "POP" then
+			stack[top] = nil
+			top -= 1
+		elseif op == "LOAD" then
+			top += 1
+			stack[top] = resolveVariable(currentScope, instruction.a)
+		elseif op == "DEFINE" then
+			defineVariable(currentScope, instruction.a, stack[top])
+			stack[top] = nil
+			top -= 1
+		elseif op == "STORE" then
+			assignVariable(currentScope, instruction.a, stack[top])
+		elseif op == "GET_MEMBER" then
+			stack[top] = stack[top][instruction.a]
+		elseif op == "UNARY" then
+			if instruction.a == "-" then
+				stack[top] = -stack[top]
+			elseif instruction.a == "!" then
+				stack[top] = not stack[top]
+			else
+				error(("Unknown unary '%s'"):format(instruction.a))
+			end
+		elseif op == "BINARY" then
+			local right = stack[top]
+			stack[top] = nil
+			top -= 1
+
+			local left = stack[top]
+			local operator = instruction.a
+
+			if operator == "+" then
+				stack[top] = binaryAdd(left, right)
+			elseif operator == "-" then
+				stack[top] = binarySub(left, right)
+			elseif operator == "*" then
+				stack[top] = binaryMul(left, right)
+			elseif operator == "/" then
+				stack[top] = binaryDiv(left, right)
+			elseif operator == "==" then
+				stack[top] = left == right
+			elseif operator == "!=" then
+				stack[top] = left ~= right
+			elseif operator == ">" then
+				stack[top] = left > right
+			elseif operator == "<" then
+				stack[top] = left < right
+			elseif operator == ">=" then
+				stack[top] = left >= right
+			elseif operator == "<=" then
+				stack[top] = left <= right
+			elseif operator == "&&" then
+				stack[top] = left and right
+			elseif operator == "||" then
+				stack[top] = left or right
+			else
+				error(("Unknown operator '%s'"):format(operator))
+			end
+		elseif op == "CALL" then
+			local argCount = instruction.b
+			local callArgs = table.create(argCount)
+
+			for argIndex = argCount, 1, -1 do
+				callArgs[argIndex] = stack[top]
+				stack[top] = nil
+				top -= 1
+			end
+
+			top += 1
+			stack[top] = self:callFunction(instruction.a, callArgs)
+		elseif op == "JUMP_IF_FALSE" then
+			local test = stack[top]
+			stack[top] = nil
+			top -= 1
+
+			if not test then
+				ip = instruction.a
+			end
+		elseif op == "JUMP" then
+			ip = instruction.a
+		elseif op == "BEGIN_SCOPE" then
+			currentScope = createScope(currentScope)
+		elseif op == "END_SCOPE" then
+			currentScope = currentScope.parent :: Scope
+		elseif op == "RETURN" then
+			return stack[top]
+		else
+			error(("Unknown bytecode op '%s'"):format(op))
+		end
+	end
+end
+
+function Interpreter:callFunction(name: string, args: { any })
+	local builtin = BUILTINS[name]
 
 	if builtin then
-		return builtin(
-			table.unpack(args)
-		)
+		return builtin(table.unpack(args))
 	end
 
-	local fn =
-		self.functions[name]
+	local chunk = self.functions[name]
 
-	if not fn then
-		error(
-			("Unknown function '%s'")
-				:format(name)
-		)
+	if not chunk then
+		error(("Unknown function '%s'"):format(name))
 	end
 
-	local scope =
-		createScope(
-			self.globalScope
-		)
-
-	for index, param
-		in fn.parameters
-	do
-		defineVariable(
-			scope,
-			param.name,
-			args[index]
-		)
-	end
-
-	local result =
-		self:evaluate(
-			fn.body,
-			scope
-		)
-
-	if type(result) == "table"
-		and result.__return
-	then
-		return result.value
-	end
-
-	return nil
+	return self:runChunk(chunk, createScope(self.globalScope), args)
 end
 
-function Interpreter:evaluate(
-	node,
-	scope: Scope
-)
-
-	-- literals
-
-	if node.type == "NumberLiteral" then
-		return node.value
-	end
-
-	if node.type == "BooleanLiteral" then
-		return node.value
-	end
-
-	-- identifiers
-
-	if node.type == "Identifier" then
-		return resolveVariable(
-			scope,
-			node.name
-		)
-	end
-
-	-- variable declaration
-
-	if node.type
-		== "VariableDeclaration"
-	then
-
-		local value = nil
-
-		if node.value then
-			value = self:evaluate(
-				node.value,
-				scope
-			)
-		end
-
-		defineVariable(
-			scope,
-			node.name,
-			value
-		)
-
-		return nil
-	end
-
-	-- assignment
-
-	if node.type
-		== "AssignmentExpression"
-	then
-
-		local value =
-			self:evaluate(
-				node.right,
-				scope
-			)
-
-		local left = node.left
-
-		if left.type
-			~= "Identifier"
-		then
-			error(
-				"Invalid assignment target"
-			)
-		end
-
-		if node.operator == "+=" then
-			value = binaryAdd(
-				resolveVariable(scope, left.name),
-				value
-			)
-		elseif node.operator == "-=" then
-			value = binarySub(
-				resolveVariable(scope, left.name),
-				value
-			)
-		elseif node.operator == "*=" then
-			value = binaryMul(
-				resolveVariable(scope, left.name),
-				value
-			)
-		elseif node.operator == "/=" then
-			value = binaryDiv(
-				resolveVariable(scope, left.name),
-				value
-			)
-		end
-
-		assignVariable(
-			scope,
-			left.name,
-			value
-		)
-
-		return value
-	end
-
-	-- binary
-
-	if node.type
-		== "BinaryExpression"
-	then
-
-		local left =
-			self:evaluate(
-				node.left,
-				scope
-			)
-
-		local right =
-			self:evaluate(
-				node.right,
-				scope
-			)
-
-		local op =
-			node.operator
-
-		if op == "+" then
-			return binaryAdd(
-				left,
-				right
-			)
-		end
-
-		if op == "-" then
-			return binarySub(
-				left,
-				right
-			)
-		end
-
-		if op == "*" then
-			return binaryMul(
-				left,
-				right
-			)
-		end
-
-		if op == "/" then
-			return binaryDiv(
-				left,
-				right
-			)
-		end
-
-		if op == "==" then
-			return left == right
-		end
-
-		if op == "!=" then
-			return left ~= right
-		end
-
-		if op == ">" then
-			return left > right
-		end
-
-		if op == "<" then
-			return left < right
-		end
-
-		if op == ">=" then
-			return left >= right
-		end
-
-		if op == "<=" then
-			return left <= right
-		end
-
-		if op == "&&" then
-			return left and right
-		end
-
-		if op == "||" then
-			return left or right
-		end
-
-		error(
-			("Unknown operator '%s'")
-				:format(op)
-		)
-	end
-
-	-- unary
-
-	if node.type
-		== "UnaryExpression"
-	then
-
-		local value =
-			self:evaluate(
-				node.argument,
-				scope
-			)
-
-		local op =
-			node.operator
-
-		if op == "-" then
-			return -value
-		end
-
-		if op == "!" then
-			return not value
-		end
-
-		error(
-			("Unknown unary '%s'")
-				:format(op)
-		)
-	end
-
-	-- member access
-
-	if node.type
-		== "MemberExpression"
-	then
-
-		local object =
-			self:evaluate(
-				node.object,
-				scope
-			)
-
-		return object[
-		node.property
-		]
-	end
-
-	-- call
-
-	if node.type
-		== "CallExpression"
-	then
-
-		local callee =
-			node.callee
-
-		if callee.type
-			~= "Identifier"
-		then
-			error(
-				"Unsupported callee"
-			)
-		end
-
-		local args = {}
-
-		for _, arg
-			in node.arguments
-		do
-			table.insert(
-				args,
-				self:evaluate(
-					arg,
-					scope
-				)
-			)
-		end
-
-		return self:callFunction(
-			callee.name,
-			args
-		)
-	end
-
-	-- expression statement
-
-	if node.type
-		== "ExpressionStatement"
-	then
-
-		return self:evaluate(
-			node.expression,
-			scope
-		)
-	end
-
-	-- block
-
-	if node.type
-		== "BlockStatement"
-	then
-
-		local blockScope =
-			createScope(scope)
-
-		for _, statement
-			in node.body
-		do
-
-			local result =
-				self:evaluate(
-					statement,
-					blockScope
-				)
-
-			if type(result) == "table"
-				and result.__return
-			then
-				return result
-			end
-		end
-
-		return nil
-	end
-
-	-- if
-
-	if node.type
-		== "IfStatement"
-	then
-
-		local test =
-			self:evaluate(
-				node.test,
-				scope
-			)
-
-		if test then
-
-			return self:evaluate(
-				node.consequent,
-				scope
-			)
-		end
-
-		if node.alternate then
-
-			return self:evaluate(
-				node.alternate,
-				scope
-			)
-		end
-
-		return nil
-	end
-
-	-- return
-
-	if node.type
-		== "ReturnStatement"
-	then
-
-		local value = nil
-
-		if node.argument then
-			value =
-				self:evaluate(
-					node.argument,
-					scope
-				)
-		end
-
-		return {
-			__return = true,
-			value = value,
-		}
-	end
-
-	error(
-		("Unknown node '%s'")
-			:format(node.type)
-	)
+function Interpreter:evaluate(node, scope: Scope)
+	local code = {}
+
+	compileStatement(self, node, code)
+	emit(code, "PUSH", nil)
+	emit(code, "RETURN")
+
+	return self:runChunk({
+		code = code,
+		parameters = {},
+	}, scope, {})
 end
 
 return Interpreter
