@@ -1,4 +1,13 @@
 local GLModule = require(script:WaitForChild("GLModule"))
+local Image = script.Parent.Image
+
+local size = Vector2.new(1023, 575)
+
+local editable = game:GetService("AssetService"):CreateEditableImage({
+	Size = size
+})
+
+Image.ImageContent = Content.fromObject(editable)
 
 local shaderSource = [[
 #pragma header
@@ -83,7 +92,6 @@ for (i in 0...n) {
 }
 ]]
 
-shader:setSizeXY(1920, 1080)
 
 shader:setUniform("uFreq1", 0.003)
 shader:setUniform("uFreq2", 0.004)
@@ -110,12 +118,31 @@ shader:setUniform("uColor3", {x=0.5,y=0.4,z=0.7,w=1})
 shader:setUniform("uColor4", {x=0.8,y=0.5,z=0.5,w=1})
 shader:setUniform("uColor5", {x=1.0,y=0.8,z=0.4,w=1})
 
+shader:setSizeXY(size.X, size.Y)
+
 shader:step()
 
-local color = shader:getColorAtPos(160, 90)
+local width = size.X
+local height = size.Y
 
-print("RESULT COLOR:")
-print(color.x)
-print(color.y)
-print(color.z)
-print(color.w)
+local bc = buffer.create(width * height * 4)
+
+for y = 0, height - 1 do
+	for x = 0, width - 1 do
+
+		local color = shader:getColorAtPos(x, y)
+
+		local index = (y * width + x) * 4
+
+buffer.writeu8(bc, index + 0, math.floor(color.x * 255))
+buffer.writeu8(bc, index + 1, math.floor(color.y * 255))
+buffer.writeu8(bc, index + 2, math.floor(color.z * 255))
+buffer.writeu8(bc, index + 3, math.floor((color.w or 1) * 255))
+	end
+end
+
+editable:WritePixelsBuffer(
+	Vector2.zero,
+	size,
+	bc
+)

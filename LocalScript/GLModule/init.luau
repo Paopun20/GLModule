@@ -19,6 +19,10 @@ export type ShaderInstance = {
 	Height: number,
 
 	Time: number,
+	AutoYield: boolean,
+	YieldInterval: number,
+	YieldCheckCount: number,
+	LastYieldTime: number,
 
 	setSizeXY: (
 		self: ShaderInstance,
@@ -42,6 +46,16 @@ export type ShaderInstance = {
 		x: number,
 		y: number
 	) -> any,
+
+	setAutoYield: (
+		self: ShaderInstance,
+		enabled: boolean,
+		interval: number?
+	) -> (),
+
+	_maybeYield: (
+		self: ShaderInstance
+	) -> (),
 }
 
 local ShaderInstance = {}
@@ -193,8 +207,51 @@ function ShaderInstance.new(
 	self.Height = 1
 
 	self.Time = 0
+	self.AutoYield = true
+	self.YieldInterval = 0.02
+	self.YieldCheckCount = 0
+	self.LastYieldTime = os.clock()
 
 	return self
+end
+
+function ShaderInstance:setAutoYield(
+	enabled: boolean,
+	interval: number?
+)
+
+	self.AutoYield = enabled
+
+	if interval then
+		self.YieldInterval = interval
+	end
+end
+
+function ShaderInstance:_maybeYield()
+
+	if not self.AutoYield then
+		return
+	end
+
+	self.YieldCheckCount += 1
+
+	if self.YieldCheckCount < 512 then
+		return
+	end
+
+	self.YieldCheckCount = 0
+
+	local now =
+		os.clock()
+
+	if now - self.LastYieldTime
+		< self.YieldInterval
+	then
+		return
+	end
+
+	task.wait()
+	self.LastYieldTime = os.clock()
 end
 
 function ShaderInstance:setSizeXY(
@@ -245,6 +302,8 @@ function ShaderInstance:getColorAtPos(
 	x: number,
 	y: number
 )
+
+	self:_maybeYield()
 
 	local uv = {
 		x = x / self.Width,
