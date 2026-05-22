@@ -1,7 +1,7 @@
 local GLModule = require(script:WaitForChild("GLModule"))
 local Image = script.Parent.Image
 
-local size = Vector2.new(1023, 575)
+local size = Vector2.new(854, 480)
 
 local editable = game:GetService("AssetService"):CreateEditableImage({
 	Size = size
@@ -105,12 +105,6 @@ shader:setUniform("uOffsetY3", 300)
 shader:setUniform("uOffsetY4", 400)
 shader:setUniform("uOffsetY5", 500)
 
-shader:setUniform("uTime1", 0)
-shader:setUniform("uTime2", 1)
-shader:setUniform("uTime3", 2)
-shader:setUniform("uTime4", 3)
-shader:setUniform("uTime5", 4)
-
 shader:setUniform("uColor0", {x=0.1,y=0.1,z=0.3,w=1})
 shader:setUniform("uColor1", {x=0.2,y=0.2,z=0.5,w=1})
 shader:setUniform("uColor2", {x=0.3,y=0.3,z=0.6,w=1})
@@ -120,29 +114,42 @@ shader:setUniform("uColor5", {x=1.0,y=0.8,z=0.4,w=1})
 
 shader:setSizeXY(size.X, size.Y)
 
-shader:step()
+f = 0
 
-local width = size.X
-local height = size.Y
+while true do
+	game:GetService("RunService").PreRender:Wait()
+	shader:step()
 
-local bc = buffer.create(width * height * 4)
+	local width = size.X
+	local height = size.Y
 
-for y = 0, height - 1 do
-	for x = 0, width - 1 do
+	local bc = buffer.create(width * height * 4)
 
-		local color = shader:getColorAtPos(x, y)
+	for y = 0, height - 1 do
+		for x = 0, width - 1 do
 
-		local index = (y * width + x) * 4
+			local color = shader:getColorAtPos(x, y)
 
-buffer.writeu8(bc, index + 0, math.floor(color.x * 255))
-buffer.writeu8(bc, index + 1, math.floor(color.y * 255))
-buffer.writeu8(bc, index + 2, math.floor(color.z * 255))
-buffer.writeu8(bc, index + 3, math.floor((color.w or 1) * 255))
+			local index = (y * width + x) * 4
+
+			buffer.writeu8(bc, index + 0, math.floor(color.x * 255))
+			buffer.writeu8(bc, index + 1, math.floor(color.y * 255))
+			buffer.writeu8(bc, index + 2, math.floor(color.z * 255))
+			buffer.writeu8(bc, index + 3, math.floor((color.w or 1) * 255))
+		end
 	end
-end
+	
+	shader:setUniform("uTime1", f)
+	shader:setUniform("uTime2", f + 1)
+	shader:setUniform("uTime3", f + 2)
+	shader:setUniform("uTime4", f + 3)
+	shader:setUniform("uTime5", f + 4)
 
-editable:WritePixelsBuffer(
-	Vector2.zero,
-	size,
-	bc
-)
+	editable:WritePixelsBuffer(
+		Vector2.zero,
+		size,
+		bc
+	)
+	
+	f += 1
+end

@@ -97,11 +97,7 @@ function Lexer:peek(offset: number?): string
 		return "\0"
 	end
 
-	return string.sub(
-		self.source,
-		index,
-		index
-	)
+	return string.sub(self.source, index, index)
 end
 
 function Lexer:advance(): string
@@ -119,10 +115,7 @@ function Lexer:advance(): string
 	return char
 end
 
-function Lexer:addToken(
-	typeName: string,
-	value: string
-)
+function Lexer:addToken(typeName: string, value: string)
 	table.insert(self.tokens, {
 		type = typeName,
 		value = value,
@@ -136,11 +129,7 @@ function Lexer:skipWhitespace()
 	while true do
 		local char = self:peek()
 
-		if char == " "
-			or char == "\t"
-			or char == "\r"
-			or char == "\n"
-		then
+		if char == " " or char == "\t" or char == "\r" or char == "\n" then
 			self:advance()
 		else
 			break
@@ -149,21 +138,15 @@ function Lexer:skipWhitespace()
 end
 
 function Lexer:skipComment()
-	if self:peek() == "/"
-		and self:peek(1) == "/"
-	then
-		while self:peek() ~= "\n"
-			and self:peek() ~= "\0"
-		do
+	if self:peek() == "/" and self:peek(1) == "/" then
+		while self:peek() ~= "\n" and self:peek() ~= "\0" do
 			self:advance()
 		end
 
 		return true
 	end
 
-	if self:peek() == "/"
-		and self:peek(1) == "*"
-	then
+	if self:peek() == "/" and self:peek(1) == "*" then
 		self:advance()
 		self:advance()
 
@@ -172,9 +155,7 @@ function Lexer:skipComment()
 				break
 			end
 
-			if self:peek() == "*"
-				and self:peek(1) == "/"
-			then
+			if self:peek() == "*" and self:peek(1) == "/" then
 				self:advance()
 				self:advance()
 				break
@@ -192,69 +173,41 @@ end
 function Lexer:readNumber()
 	local start = self.position
 
-	while string.match(
-		self:peek(),
-		"%d"
-		) do
+	while string.match(self:peek(), "%d") do
 		self:advance()
 	end
 
 	if self:peek() == "." then
 		self:advance()
 
-		while string.match(
-			self:peek(),
-			"%d"
-			) do
+		while string.match(self:peek(), "%d") do
 			self:advance()
 		end
 	end
 
-	local value = string.sub(
-		self.source,
-		start,
-		self.position - 1
-	)
+	local value = string.sub(self.source, start, self.position - 1)
 
-	self:addToken(
-		"NUMBER",
-		value
-	)
+	self:addToken("NUMBER", value)
 end
 
 function Lexer:readIdentifier()
 	local start = self.position
 
-	while string.match(
-		self:peek(),
-		"[%w_]"
-		) do
+	while string.match(self:peek(), "[%w_]") do
 		self:advance()
 	end
 
-	local value = string.sub(
-		self.source,
-		start,
-		self.position - 1
-	)
+	local value = string.sub(self.source, start, self.position - 1)
 
 	if KEYWORDS[value] then
-		self:addToken(
-			"KEYWORD",
-			value
-		)
+		self:addToken("KEYWORD", value)
 	else
-		self:addToken(
-			"IDENTIFIER",
-			value
-		)
+		self:addToken("IDENTIFIER", value)
 	end
 end
 
-function Lexer:tokenize(): {Token}
-
+function Lexer:tokenize(): { Token }
 	while self.position <= self.length do
-
 		self:skipWhitespace()
 
 		if self:skipComment() then
@@ -283,15 +236,10 @@ function Lexer:tokenize(): {Token}
 
 		-- two-char operators
 
-		local pair =
-			char .. self:peek(1)
+		local pair = char .. self:peek(1)
 
 		if TWO_CHAR_OPERATORS[pair] then
-
-			self:addToken(
-				"OPERATOR",
-				pair
-			)
+			self:addToken("OPERATOR", pair)
 
 			self:advance()
 			self:advance()
@@ -301,35 +249,20 @@ function Lexer:tokenize(): {Token}
 
 		-- single-char
 
-		local tokenType =
-			SINGLE_CHAR_TOKENS[char]
+		local tokenType = SINGLE_CHAR_TOKENS[char]
 
 		if tokenType then
-
-			self:addToken(
-				tokenType,
-				char
-			)
+			self:addToken(tokenType, char)
 
 			self:advance()
 
 			continue
 		end
 
-		error(
-			string.format(
-				"Unexpected character '%s' at %d:%d",
-				char,
-				self.line,
-				self.column
-			)
-		)
+		error(string.format("Unexpected character '%s' at %d:%d", char, self.line, self.column))
 	end
 
-	self:addToken(
-		"EOF",
-		""
-	)
+	self:addToken("EOF", "")
 
 	return self.tokens
 end

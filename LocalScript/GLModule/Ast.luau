@@ -62,7 +62,7 @@ export type CallExpression = BaseNode & {
 	type: "CallExpression",
 
 	callee: Expression,
-	arguments: {Expression},
+	arguments: { Expression },
 }
 
 export type MemberExpression = BaseNode & {
@@ -76,7 +76,7 @@ export type ConstructorExpression = BaseNode & {
 	type: "ConstructorExpression",
 
 	kind: string,
-	arguments: {Expression},
+	arguments: { Expression },
 }
 
 -- statements
@@ -100,7 +100,7 @@ export type VariableDeclaration = BaseNode & {
 export type BlockStatement = BaseNode & {
 	type: "BlockStatement",
 
-	body: {Statement},
+	body: { Statement },
 }
 
 export type IfStatement = BaseNode & {
@@ -130,7 +130,7 @@ export type FunctionDeclaration = BaseNode & {
 	returnType: string,
 	name: string,
 
-	parameters: {FunctionParameter},
+	parameters: { FunctionParameter },
 
 	body: BlockStatement,
 }
@@ -147,36 +147,26 @@ export type UniformDeclaration = BaseNode & {
 export type Program = BaseNode & {
 	type: "Program",
 
-	body: {TopLevelStatement},
+	body: { TopLevelStatement },
 }
 
 -- unions
 
-export type Literal =
-	NumberLiteral
-| BooleanLiteral
+export type Literal = NumberLiteral | BooleanLiteral
 
 export type Expression =
 	Literal
-| Identifier
-| BinaryExpression
-| UnaryExpression
-| AssignmentExpression
-| CallExpression
-| MemberExpression
-| ConstructorExpression
+	| Identifier
+	| BinaryExpression
+	| UnaryExpression
+	| AssignmentExpression
+	| CallExpression
+	| MemberExpression
+	| ConstructorExpression
 
-export type Statement =
-	ExpressionStatement
-| VariableDeclaration
-| BlockStatement
-| IfStatement
-| ReturnStatement
+export type Statement = ExpressionStatement | VariableDeclaration | BlockStatement | IfStatement | ReturnStatement
 
-export type TopLevelStatement =
-	Statement
-| FunctionDeclaration
-| UniformDeclaration
+export type TopLevelStatement = Statement | FunctionDeclaration | UniformDeclaration
 
 local Ast = {}
 
