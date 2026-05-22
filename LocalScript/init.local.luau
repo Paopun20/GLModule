@@ -146,6 +146,6 @@ task.spawn(function()
 		editable:WritePixelsBuffer(Vector2.zero, size, bc)
 
 		f += 1 / 60
-		task.wait(1 / 25)
+		task.wait(10)
 	end
 end)
